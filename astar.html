@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AStar</title>
+<script src="https://code.jquery.com/jquery-2.2.3.min.js" integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo=" crossorigin="anonymous"></script>
+</head>
+<style>
+	#grid tr td{
+		width: 10px;
+		height: 10px;
+		border: 1px solid black;
+		box-sizing: border-box;
+	}
+	.rot90{
+		-webkit-transform: rotate(90deg);
+		-moz-transform: rotate(90deg);
+		-o-transform: rotate(90deg);
+		-ms-transform: rotate(90deg);
+		transform: rotate(90deg);
+	}
+</style>
+<body>
+<table>
+	<tr>
+		<td>
+			Rows:
+		</td>
+		<td>
+			<input type="text" id="rowCount" name="rowCount" placeholder="0" onchange="rowCountChng(this)"/>	
+		</td>
+		<td>
+			Diagonals:
+		</td>
+	</tr>
+	<tr>
+		<td>
+			Columns:
+		</td>
+		<td>
+			<input type="text" id="colCount" name="colCount" placeholder="0" onchange="colCountChng(this)"/>	
+		</td>
+		<td>
+			<input type="checkbox" id="diagonals" name="diagonals" value="True" onchange="toggleChck(this)"/>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			Start:
+		</td>
+		<td>
+			<input type="text" id="startY" name="startY" placeholder="0" onchange="setStart(getAxisMods('X') + ((flipX ? -1 : 1) * $('#startX').val()),getAxisMods('Y') + ((flipY ? -1 : 1) * this.value))"/>	
+		</td>
+		<td>
+			<input type="text" id="startX" name="startX" placeholder="0" onchange="setStart(getAxisMods('X') + ((flipX ? -1 : 1) * this.value),getAxisMods('Y') + ((flipY ? -1 : 1) * $('#startY').val()))"/>	
+		</td>		
+	</tr>
+	<tr>
+		<td>
+			Goal:
+		</td>
+		<td>
+			<input type="text" id="goalY" name="goalY" placeholder="0" onchange="setGoal(getAxisMods('X') + ((flipX ? -1 : 1) * $('#goalX').val()),getAxisMods('Y') + ((flipY ? -1 : 1) * this.value))"/>	
+		</td>
+		<td>
+			<input type="text" id="goalX" name="goalX" placeholder="0" onchange="setGoal(getAxisMods('X') + ((flipX ? -1 : 1) * this.value),getAxisMods('Y') + ((flipY ? -1 : 1) * $('#goalY').val()))"/>	
+		</td>		
+	</tr>
+</table>
+<button onclick="if(!AStar()){updateGrid();alert('Guess I should have given him a rocket launcher for that wall, poor bastard...\n\rLil\' bugger gave it a helluva shot, though...');}">AStar me!</button> <button onclick="resetGrid();">Reset Grid!</button> <button onclick="rstTrvrsrCls()">Reset Traversable Cells!</button> 
+<br/>
+<button onclick="flipRelAxes('X')">Flip Around X Axis!</button> <button onclick="flipRelAxes('Y')">Flip Around Y Axis!</button> 
+
+<br/>
+*Result path renders from goal to start
+<table id="grid">
+</table>
+</body>
+<script>
+	var nodes = [];
+	var nodeMap = [[]];
+	var start = null;
+	var goal = null;
+	var diagonals = false;
+	var flipX = true;
+	var flipY = false;
+	var isDown = false;
+	var jps = false;
+	$(document).ready(function(){
+		setDiagonalsChckd();
+	}).bind({
+		mousedown: function(){
+			isDown = true;
+		},
+		mouseup: function(){
+			isDown = false;
+		}
+	});
+	function rstTrvrsrCls(){
+		$.each(nodes,function(k,v){
+			v.Opened = false;
+			v.Closed = false;
+			v.Clkd = false;
+			v.fScore = null;
+			v.gScore = null;
+		});
+		$('#startX').trigger('change'); $('#goalX').trigger('change');
+		updateGrid();
+	}
+	function resetGrid(){
+		newGrid(getRowCount(),getColCount()); $('#startX').trigger('change'); $('#goalX').trigger('change');
+	}
+	function getAxisMods(ax){
+		if(ax == 'X'){
+			if(flipX){
+				return getRowCount() - 1
+			}
+			return 0;
+		}else if(ax == 'Y'){
+			if(flipY){
+				return getColCount() - 1
+			}
+			return 0;
+		}
+	}
+	function flipRelAxes(ax){
+		if(ax == 'X'){
+			flipX = ! flipX;
+		}else if(ax == 'Y'){
+			flipY = ! flipY;
+		}
+		rstTrvrsrCls();
+	}
+	function setDiagonalsChckd(){
+		console.log($("#diagonals"));
+	}
+	function toggleChck(ths){
+		diagonals = $(ths)[0].checked;
+	}
+	function setStart(x,y){
+		start = nodeMap[x][y];
+	}
+	function setGoal(x,y){
+		goal = nodeMap[x][y];
+	}
+	function rowCountChng(ths){
+		console.log("Event Triggered: rowsCountChng");
+		console.log(ths.value);
+		setRowCount(ths);
+	}
+	function colCountChng(ths){
+		console.log("Event Triggered: colsCountChng");
+		console.log(ths.value);		
+		setColCount(ths);
+	}
+	function getRowCount(){
+		return $("#rowCount").val();
+	}
+	function getColCount(){
+		return $("#colCount").val();		
+	}
+	function setRowCount(ths){
+		console.log("Event Triggered: setRowCount");
+		newGrid(ths.value, getColCount());
+	}
+	function setColCount(ths){
+		console.log("Event Triggered: setColCount");	
+		newGrid(getRowCount(), ths.value);
+	}
+	function updateGrid(){
+		$.each($("#grid")[0].rows, function(x){
+			$.each($("#grid")[0].rows[x].cells, function(y){
+				if($(this).data("node").Clkd){
+					$(this).css("background-color","red");
+				}else if(!$(this).data("node").Trvrsble){
+					$(this).css("background-color","black");
+				}else if($(this).data("node").Closed){
+					$(this).css("background-color","blue");
+				}else if($(this).data("node").Opened){
+					$(this).css("background-color","orange");
+				}else{
+					$(this).css("background-color","white");
+				}
+			});
+		});		
+	}
+	function newGrid(x, y){
+		$("#grid").html("").data("", null);
+		nodeMap = [];
+		nodes = [];
+		for(i = 0; i < x; i++){
+			var tmpRw = document.getElementById("grid").insertRow();
+			var toInsrt = [];
+			for(j = 0; j < y; j++){
+				var tmpCl = tmpRw.insertCell();
+			}
+		}
+		
+		$.each($("#grid")[0].rows, function(dx){
+			var rwHldr = [];
+			$.each($("#grid")[0].rows[dx].cells, function(dy){
+				var tmpClData = { Clkd: false, X: dx, Y: dy, Trvrsble: true, fScore: null, gScore: null, CmeFrm: null, Opened: false, Closed: false, Jnctn: false, DeadEnd: false };
+				nodes.push(tmpClData);
+				rwHldr.push(tmpClData)
+				$($("#grid")[0].rows[dx].cells[dy]).data("node", tmpClData).bind({
+					click: function(e){
+						if(e.which == 3){
+							$(this).data("node").Clkd = !$(this).data("node").Clkd;
+						}else if(e.which == 1){
+							$(this).data("node").Trvrsble = !$(this).data("node").Trvrsble;
+						}
+						updateGrid();
+					},
+					mouseenter: function(e){
+						if(e.which == 3 && isDown){
+							$(this).data("node").Clkd = !$(this).data("node").Clkd;
+						}else if(e.which == 1 && isDown){
+							$(this).data("node").Trvrsble = !$(this).data("node").Trvrsble;
+						}
+						updateGrid();
+					}
+				});
+			});
+			nodeMap.push(rwHldr);
+		});
+	}
+	function getNeighbors(current){
+		var ret = [];
+		if(!diagonals){
+			var xs = [current.X + 1, current.X - 1];
+			var ys = [current.Y + 1, current.Y - 1];
+			$.each(xs, function(kx,vx){
+				if(nodeMap[vx] && nodeMap[vx][current.Y] && nodeMap[vx][current.Y].Trvrsble && current.CmeFrm != nodeMap[vx][current.Y] && !nodeMap[vx][current.Y].DeadEnd){
+					ret.push(nodeMap[vx][current.Y]);
+				}
+			});
+			$.each(ys, function(ky,vy){
+				if(nodeMap[current.X] && nodeMap[current.X][vy] && nodeMap[current.X][vy].Trvrsble && current.CmeFrm != nodeMap[current.X][vy] && !nodeMap[current.X][vy].DeadEnd){
+					ret.push(nodeMap[current.X][vy]);
+				}
+			});
+			if(ret.length > 1){
+				current.Jnctn = true;
+			}
+		}else if(!jps){
+			var xs = [current.X + 1, current.X, current.X - 1];
+			var ys = [current.Y + 1, current.Y, current.Y - 1];
+			$.each(xs, function(kx,vx){
+				$.each(ys, function(ky, vy){				
+					if(!(vx == 0 && vy == 0) && nodeMap[vx] && nodeMap[vx][vy] && nodeMap[vx][vy].Trvrsble && nodeMap[vx][vy] != current.CmeFrm && !nodeMap[vx][vy].DeadEnd){
+						ret.push(nodeMap[vx][vy]);
+					}
+				});
+			});
+		}else{
+			// orth first
+			
+		
+		}
+		
+		return ret.sort(function(a,b){  
+			return a.fScore - b.fScore;
+		});
+	}
+	function pruneOrthagonal(px, py, cx, cy, nx, ny, ret){
+
+	}
+	function pruneDiagonal(dx, dy){
+	
+	}
+	function getDistance(goal, origin){
+		return Math.sqrt((goal.X-origin.X)*(goal.X-origin.X) + (goal.Y-origin.Y)*(goal.Y-origin.Y));//
+	}
+	function getLowestFScoreNode(array) {
+		var min = array[0];
+		for (var i = 0; i < array.length; i++) {
+			if (array[i].fScore < min.fScore){
+				min = array[i];				
+			}
+		}
+		return min;
+	}
+	function AStar(){
+		// The set of nodes already evaluated.
+		var closedSet = [];
+		// The set of currently discovered nodes still to be evaluated.
+		// Initially, only the start node is known.
+		var openSet = [start];
+		// For each node, which node it can most efficiently be reached from.
+		// If a node can be reached from many nodes, cameFrom will eventually contain the
+		// most efficient previous step.
+		//var cameFrom = [[]];
+		
+		// For each node, the cost of getting from the start node to that node.
+		//var gScore = [[]];
+		// The cost of going from start to start is zero.
+		//gScore[start.X][start.Y] = 0;
+		nodes[nodes.indexOf(start)].gScore = 0;
+		// For each node, the total cost of getting from the start node to the goal
+		// by passing by that node. That value is partly known, partly heuristic.
+		//var fScore = [[]];
+		// For the first node, that value is completely heuristic.
+		//fScore[start.X][start.Y] = heuristic_cost_estimate(start, goal);
+		nodes[nodes.indexOf(start)].fScore = getDistance(start,goal);
+		console.log("Event Triggered: A*");
+		console.log("Event Data: A* Start Fscore:" + nodes[nodes.indexOf(start)].fScore);	
+		var step = 0;
+		while(openSet.length > 0){
+			step++;
+			var current = getLowestFScoreNode(openSet);
+			console.log("evaluating open node");
+			console.log(current);
+			if (current == goal){
+				//setTimeout(function(){reconstruct_path(current);updateGrid();},250);
+				setTimeout(function(){
+					reconstruct_path(current);
+					updateGrid();
+				}, 0);
+				console.log("matches goal");													
+				return true;
+			}
+			openSet.splice(openSet.indexOf[current], 1);
+			closedSet.push(current);
+			console.log("added to closed set");
+			setTimeout(function(){
+				current.Closed = true;
+				updateGrid();
+			}, 0);
+			
+			
+			var neighbors = getNeighbors(current);
+			console.log(neighbors);
+			console.log("Event Data: A* Neighbors Count: " + neighbors.length);
+			
+			$.each(neighbors, function(k,v){
+				console.log("evaluating neighbor");
+				console.log(v);						
+				
+				if(closedSet.indexOf(v) > -1){
+					console.log("alrdy evaluated");									
+					return;		// Ignore the neighbor which is already evaluated.
+				}
+				// The distance from start to a neighbor
+				var tentative_gScore = current.gScore + getDistance(current, v);//dist_between(current, neighbor)
+				if(openSet.indexOf(v) < 0){// Discovered a new node
+					openSet.push(v);
+					setTimeout(function(){
+						v.Opened = true;
+						updateGrid();
+					}, 0);
+					console.log("added to open set");																			
+				}	
+				else if(tentative_gScore >= v.gScore){// This is not a better path.
+					console.log("skipd");																			
+					return;		
+				}
+				// This path is the best until now. Record it!
+				v.CmeFrm = current;
+				v.gScore = tentative_gScore;
+				v.fScore = v.gScore + getDistance(goal, v);
+				console.log("updated");																							
+			});
+			if(openSet.length <= 0){
+				console.log("gotta back track");
+				var bckNd = backTrack(current);
+				if(bckNd){
+					console.log("found this guy added to open set");
+					console.log(bckNd);
+					openSet.push(bckNd);
+					setTimeout(function(){
+						bckNd.Opened = true;
+						updateGrid();
+					}, 0);
+				}
+			}
+		}
+		return false;		
+	}
+	function reconstruct_path(nd){
+	nd.Clkd = true;
+		if(nd.CmeFrm != null){
+			//setTimeout(function(){reconstruct_path(nd.CmeFrm);updateGrid();},250);
+			reconstruct_path(nd.CmeFrm);
+		}
+	}
+	var p = 0;
+	function backTrack(nd){
+		console.log(nd);
+		nd.DeadEnd = true;
+		if(nd.CmeFrm && p < 10){
+			if(nd.CmeFrm.Jnctn && !nd.CmeFrm.Closed && !nd.CmeFrm.DeadEnd){
+				i++;
+				return nd.CmeFrm;
+			}else if(!nd.CmeFrm.DeadEnd){
+				return backTrack(nd.CmeFrm);
+			}
+		}
+		console.log("didnt find a backup...");
+	}
+</script>
+</html>
